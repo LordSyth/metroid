@@ -21,7 +21,7 @@ struct mover : movable { xyd acceleration, max_velocity; double health, damage; 
 struct fallable : mover { double gravity; bool grounded; };
 std::vector<fallable*> enemies;
 struct character : fallable {
-	enum class state { standing, walking, jumping, falling, hurting };
+	enum class state { standing, walking, crouching, jumping, falling, hurting };
 	state actionstate;
 	double invulnerability;
 	int animindex; //is an index of which animation frame you're on
@@ -316,8 +316,15 @@ void idle() {
 		}
 	}
 	if (player.velocity.y != 0.) player.grounded = false;
-	//player.x += player.velocity.x * delta_t; //possibly this should not be performed
-	//player.y += player.velocity.y * delta_t;
+	//check to see if the player should be crouching
+	if (player.actionstate != character::state::crouching && player.grounded && keyboard['s']) {
+		player.actionstate = character::state::crouching;
+		player.dimensions.y /= 2.;
+	}
+	if (player.actionstate == character::state::crouching && !(player.grounded && keyboard['s'])) {
+		player.actionstate = character::state::standing;
+		player.dimensions.y *= 2.;
+	}
 	player += player.velocity * delta_t;
 	if (player.velocity.x > 0.) player.facingright = true;
 	if (player.velocity.x < 0.) player.facingright = false;
