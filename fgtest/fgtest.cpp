@@ -9,11 +9,10 @@ double delta_t; //so far this is only used by idle()
 std::map<unsigned char, bool> keyboard;
 
 struct hitbox : xyd {
-	std::vector<xyd> vertices; //all vertices stored here (in order); parent xyd can store whatever you want
+	std::vector<xyd> vertices; //used as displacements from the parent's center xy
 	double maxlifetime;
 	double age;
 	double damage;
-	bool playermade;
 };
 std::vector<hitbox> hitboxes;
 
@@ -27,6 +26,7 @@ struct character : fallable {
 	double invulnerability;
 	int animindex; //is an index of which animation frame you're on
 	std::vector<hitbox> attacks;
+	double damage_modifier;
 };
 character player;
 
@@ -37,27 +37,47 @@ enum class tiletype {
 };
 tiletype map[50][50];
 
-void player_attack_right_test() {
+void player_attack_test() {
+
 	player.attacks.resize(3);
-	player.attacks[0].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y * 1. / 4.);
-	player.attacks[0].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y * 5. / 8.);
-	player.attacks[0].vertices.emplace_back(player.x + player.dimensions.x * 5. / 4., player.y + player.dimensions.y * 5. / 8.);
-	player.attacks[0].maxlifetime = player.attacks[0].age = 1. / 3.;
-	player.attacks[0].damage = 1.;
-	player.attacks[0].playermade = true;
-	player.attacks[1].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y * 5. / 8.);
-	player.attacks[1].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y);
-	player.attacks[1].vertices.emplace_back(player.x + player.dimensions.x * 5. / 4., player.y + player.dimensions.y);
-	player.attacks[1].vertices.emplace_back(player.x + player.dimensions.x * 5. / 4., player.y + player.dimensions.y * 5. / 8.);
-	player.attacks[1].maxlifetime = player.attacks[1].age = 2. / 3.;
-	player.attacks[1].damage = 1.;
-	player.attacks[1].playermade = true;
-	player.attacks[2].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y);
-	player.attacks[2].vertices.emplace_back(player.x + player.dimensions.x * 1. / 2., player.y + player.dimensions.y * 11. / 8.);
-	player.attacks[2].vertices.emplace_back(player.x + player.dimensions.x * 5. / 4., player.y + player.dimensions.y);
-	player.attacks[2].maxlifetime = player.attacks[2].age = 1.;
-	player.attacks[2].damage = 1.;
-	player.attacks[2].playermade = true;
+	player.attacks[0].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y * 1. / 4.);
+	player.attacks[0].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y * 5. / 8.);
+	player.attacks[0].vertices.emplace_back(player.dimensions.x * 7. / 4., player.dimensions.y * 5. / 8.);
+	player.attacks[0].maxlifetime = 1. / 9.;
+	player.attacks[0].age = -1. / 27.;
+	player.attacks[0].damage = 0.;
+	if (!player.facingright) {
+		player.attacks[0].vertices[0].x *= -1.;
+		player.attacks[0].vertices[1].x *= -1.;
+		player.attacks[0].vertices[2].x *= -1.;
+	}
+
+	player.attacks[1].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y * 5. / 8.);
+	player.attacks[1].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y);
+	player.attacks[1].vertices.emplace_back(player.dimensions.x * 7. / 4., player.dimensions.y);
+	player.attacks[1].vertices.emplace_back(player.dimensions.x * 7. / 4., player.dimensions.y * 5. / 8.);
+	player.attacks[1].maxlifetime = 1. / 9.;
+	player.attacks[1].age = -2. / 27.;
+	player.attacks[1].damage = 0.;
+	if (!player.facingright) {
+		player.attacks[1].vertices[0].x *= -1.;
+		player.attacks[1].vertices[1].x *= -1.;
+		player.attacks[1].vertices[2].x *= -1.;
+		player.attacks[1].vertices[3].x *= -1.;
+	}
+
+	player.attacks[2].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y);
+	player.attacks[2].vertices.emplace_back(player.dimensions.x * 1. / 2., player.dimensions.y * 11. / 8.);
+	player.attacks[2].vertices.emplace_back(player.dimensions.x * 7. / 4., player.dimensions.y);
+	player.attacks[2].maxlifetime = 1. / 9.;
+	player.attacks[2].age = -3. / 27.;
+	player.attacks[2].damage = 0.;
+	if (!player.facingright) {
+		player.attacks[2].vertices[0].x *= -1.;
+		player.attacks[2].vertices[1].x *= -1.;
+		player.attacks[2].vertices[2].x *= -1.;
+	}
+
 }
 
 void reset() {
@@ -82,6 +102,8 @@ void reset() {
 		player.actionstate = character::state::standing;
 		player.invulnerability = 0.;
 		player.animindex = 0;
+		player.attacks.clear();
+		player.damage_modifier = 1.;
 	}
 	//reset hitboxes
 	hitboxes.clear();
@@ -161,11 +183,17 @@ void display() {
 		glEnd();
 	}
 	//for now, we'll draw hitboxes as polygons
-	for (auto h : hitboxes) {
-		if (h.playermade) glColor4d(.5, .25, 1., .8);
-		else glColor4d(1., .3, 1., .8);
+	for (auto h : hitboxes) if (h.age >= 0.) {
+		glColor4d(1., .3, 1., .8);
 		glBegin(GL_POLYGON);
 		for (auto v : h.vertices)
+			glVertex3d(v.x, v.y, 1.);
+		glEnd();
+	}
+	for (auto a : player.attacks) if (a.age >= 0.) {
+		glColor4d(.5, .25, 1., .8);
+		glBegin(GL_POLYGON);
+		for (auto v : a.vertices)
 			glVertex3d(v.x, v.y, 1.);
 		glEnd();
 	}
@@ -194,13 +222,16 @@ void idle() {
 			h = hitboxes.erase(h);
 		else ++h;
 	}
-	for (auto h = player.attacks.begin(); h != player.attacks.end(); ) {
-		h->age -= delta_t;
-		if (h->age <= 0.) {
-			hitboxes.push_back(*h);
-			h = player.attacks.erase(h);
+	for (auto a = player.attacks.begin(); a != player.attacks.end(); ) {
+		a->age += delta_t;
+		if (a->age >= 0. && a->damage == 0.) {
+			for (xyd& v : a->vertices)
+				v += player;
+			a->damage = 1. * player.damage_modifier;
 		}
-		else ++h;
+		if (a->age >= a->maxlifetime)
+			a = player.attacks.erase(a);
+		else ++a;
 	}
 	//add gravity to p.v.y
 	player.velocity.y += player.gravity * delta_t;
@@ -285,8 +316,11 @@ void idle() {
 		}
 	}
 	if (player.velocity.y != 0.) player.grounded = false;
-	player.x += player.velocity.x * delta_t; //possibly this should not be performed
-	player.y += player.velocity.y * delta_t;
+	//player.x += player.velocity.x * delta_t; //possibly this should not be performed
+	//player.y += player.velocity.y * delta_t;
+	player += player.velocity * delta_t;
+	if (player.velocity.x > 0.) player.facingright = true;
+	if (player.velocity.x < 0.) player.facingright = false;
 	//go thru every enemy
 	for (auto e : enemies) {
 		//add gravity
@@ -367,8 +401,9 @@ template <bool down> void keydown(unsigned char key, int, int) {
 	keyboard[key] = down;
 	if (down) {
 		if (key == VK_ESCAPE) reset();
-		if (key == 'j') if (player.attacks.empty())
-			player_attack_right_test();
+		if (key == 'j')
+			if (player.attacks.empty())
+				player_attack_test();
 	}
 }
 
